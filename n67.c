@@ -1,0 +1,239 @@
+#include <WiFi.h>
+#include <WebServer.h>
+#include <LiquidCrystal_I2C.h>
+#include <Wire.h>
+#include <time.h>
+
+const char* ssid     = "Educere ";
+const char* password = "Educere2023";
+
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+WebServer server(80);
+
+const int PINO_BUZZER = 27;
+const int LED_GREEN = 26;
+const int LED_BLUE = 25;
+
+bool alarmeTocado = false;
+
+struct Alarme {
+  int hora;
+  int minuto;
+  int segundo;
+  String mensagem;
+};
+
+Alarme alarmes[6];
+int totalAlarmes = 0;
+
+String htmlPage() {
+  String page = R"rawliteral(
+    <!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <title>Painel ESP32</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body {
+      font-family: sans-serif;
+      background: #1f1f1f;
+      color: white;
+      text-align: center;
+      padding: 20px;
+    }
+    .container {
+      max-width: 400px;
+      margin: auto;
+      background: #2f2f2f;
+      border-radius: 12px;
+      padding: 20px;
+    }
+    input, button {
+      padding: 10px;
+      margin: 10px 0;
+      width: 100%;
+      border-radius: 6px;
+      border: none;
+      font-size: 16px;
+    }
+    input {
+      background: #444;
+      color: white;
+    }
+    button {
+      background: #4caf50;
+      color: white;
+      cursor: pointer;
+    }
+    .alarm-item {
+      background: #444;
+      margin: 8px 0;
+      padding: 8px;
+      border-radius: 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .gas-bar {
+      height: 20px;
+      border-radius: 6px;
+      background: #555;
+      margin-top: 10px;
+      position: relative;
+    }
+    .gas-level {
+      height: 100%;
+      border-radius: 6px;
+      text-align: right;
+      color: black;
+      font-weight: bold;
+      padding-right: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Painel de Alarmes</h2>
+    <form action="/add" method="get">
+      <input type="time" name="horario" required>
+      <input type="text" name="mensagem" placeholder="Mensagem do Alarme" required>
+      <button type="submit">Salvar Alarme</button>
+    </form>
+    <div id="lista-alarmes">
+      <h3>Alarmes Registrados:</h3>
+)rawliteral";
+  for (int i = 0; i < totalAlarmes; i++) {
+    page += "<div class='alarm-item'>" + String(alarmes[i].hora) + ":" + (alarmes[i].minuto < 10 ? "0" : "") + String(alarmes[i].minuto) + " - " + alarmes[i].mensagem + "</div>";
+  }
+  page += R"rawliteral(
+    </div>
+    <h2 style="margin-top:40px">Sensor de Gás - MH-440D</h2>
+    <div>Valor simulado (ppm): <span id="ppm">0</span></div>
+    <div class="gas-bar">
+      <div id="nivel" class="gas-level" style="width: 0; background: green">0 ppm</div>
+    </div>
+  </div>
+
+  <script>
+    function simularGas() {
+      const ppm = Math.floor(Math.random() * 3000);
+      document.getElementById('ppm').textContent = ppm;
+      const bar = document.getElementById('nivel');
+      bar.style.width = Math.min(ppm/30, 100) + '%';
+      bar.textContent = ppm + ' ppm';
+      if (ppm < 1000) bar.style.background = 'green';
+      else if (ppm < 2000) bar.style.background = 'orange';
+      else bar.style.background = 'red';
+    }
+    setInterval(simularGas, 2000);
+  </script>
+</body>
+</html>
+)rawliteral";
+  return page;
+}
+
+void handleRoot() {
+  server.send(200, "text/html", htmlPage());
+}
+
+void handleAdd() {
+  if (totalAlarmes < 6 && server.hasArg("horario") && server.hasArg("mensagem")) {
+    String horario = server.arg("horario");
+    int sep = horario.indexOf(':');
+    if (sep > 0) {
+      Alarme novo;
+      novo.hora = horario.substring(0, sep).toInt();
+      novo.minuto = horario.substring(sep + 1).toInt();
+      novo.segundo = 0;
+      novo.mensagem = server.arg("mensagem");
+      alarmes[totalAlarmes++] = novo;
+    }
+  }
+  server.sendHeader("Location", "/");
+  server.send(303);
+}
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(PINO_BUZZER, OUTPUT);
+  pinMode(LED_GREEN, OUTPUT);
+  pinMode(LED_BLUE, OUTPUT);
+
+  lcd.init();
+  lcd.backlight();
+  lcd.setCursor(0, 0);
+  lcd.print("Conectando...");
+
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("WiFi OK: ");
+  lcd.setCursor(0, 1);
+  lcd.print(WiFi.localIP());
+  delay(3000);
+
+  configTime(-3 * 3600, 0, "pool.ntp.org", "time.nist.gov");
+
+  server.on("/", handleRoot);
+  server.on("/add", handleAdd);
+  server.begin();
+}
+
+void loop() {
+  server.handleClient();
+  struct tm timeinfo;
+  getLocalTime(&timeinfo);
+
+  lcd.setCursor(0, 0);
+  lcd.print("Hora: ");
+  char horaStr[9];
+  strftime(horaStr, sizeof(horaStr), "%H:%M:%S", &timeinfo);
+  lcd.print(horaStr);
+
+  lcd.setCursor(0, 1);
+  char dataStr[11];
+  strftime(dataStr, sizeof(dataStr), "%d/%m/%Y", &timeinfo);
+  lcd.print(dataStr);
+
+  for (int i = 0; i < totalAlarmes; i++) {
+    if (timeinfo.tm_hour == alarmes[i].hora &&
+        timeinfo.tm_min == alarmes[i].minuto &&
+        timeinfo.tm_sec == alarmes[i].segundo) {
+      if (!alarmeTocado) {
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print(alarmes[i].mensagem);
+
+        for (int j = 0; j < 5; j++) {
+          digitalWrite(PINO_BUZZER, HIGH);
+          digitalWrite(LED_GREEN, HIGH);
+          digitalWrite(LED_BLUE, HIGH);
+          delay(300);
+          digitalWrite(PINO_BUZZER, LOW);
+          digitalWrite(LED_GREEN, LOW);
+          digitalWrite(LED_BLUE, LOW);
+          delay(300);
+        }
+
+        alarmeTocado = true;
+
+        for (int j = i; j < totalAlarmes - 1; j++) {
+          alarmes[j] = alarmes[j + 1];
+        }
+        totalAlarmes--;
+        i--;
+        lcd.clear();
+      }
+    } else {
+      alarmeTocado = false;
+    }
+  }
+  delay(1000);
+}
