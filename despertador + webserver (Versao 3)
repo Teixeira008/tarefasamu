@@ -20,7 +20,9 @@ int LED_YLLW2 = 19;
 int PINO_BOTAO = 15;
 int estadoBOTAO = 0;
 
-
+int MQ2 = 34;
+float sensorValue;
+int Threshold = 2000;
 
 bool alarmeTocado = false;
 
@@ -165,6 +167,9 @@ void handleAdd() {
 
 void setup() {
   Serial.begin(115200);
+
+  Serial.println("Mq2 warming up");
+  delay(2000);
   
   pinMode(PINO_BUZZER, OUTPUT);
   pinMode(LED_GREEN, OUTPUT);
@@ -191,6 +196,7 @@ void setup() {
   lcd.setCursor(0, 1);
   lcd.print(WiFi.localIP());
   delay(3000);
+  lcd.clear();
 
   configTime(-3 * 3600, 0, "pool.ntp.org", "time.nist.gov");
 
@@ -200,7 +206,7 @@ void setup() {
 }
 
 void loop() {
-  // --- o resto do seu código loop abaixo ---
+  
   server.handleClient();
 
   struct tm timeinfo;
@@ -256,6 +262,10 @@ void loop() {
     digitalWrite(LED_YLLW1 , HIGH);
     digitalWrite(LED_YLLW2 , HIGH);
     digitalWrite(PINO_BUZZER, HIGH);
+    delay(100);
+    digitalWrite(LED_YLLW1 , LOW);
+    digitalWrite(LED_YLLW2, LOW);
+    digitalWrite(PINO_BUZZER, LOW);
     lcd.clear();
     lcd.setCursor(0, 0);
     lcd.print("VAZAMENTO!!!");
@@ -264,8 +274,26 @@ void loop() {
     }else { 
     digitalWrite (LED_YLLW1 , LOW);
     digitalWrite (LED_YLLW2 , LOW);
-    digitalWrite(PINO_BUZZER, LOW); 
+    digitalWrite(PINO_BUZZER, LOW);
 
   }
+  
+  sensorValue = analogRead(MQ2);
+  
+  if (sensorValue > Threshold ){
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Vazamento: ");
+    lcd.print(sensorValue);
+
+    lcd.setCursor(0, 1);
+    digitalWrite(LED_YLLW1, HIGH);
+    digitalWrite(LED_YLLW2, HIGH);
+    digitalWrite(PINO_BUZZER, HIGH);
+    lcd.print("PERIGO!!");
+    delay(500);
+  }
+ lcd.print("");
+
   delay(1000);
 }
