@@ -15,14 +15,14 @@ const int PINO_BUZZER = 27;
 const int LED_GREEN = 25;
 const int LED_BLUE = 26;
 
-int LED_YLLW1 = 18;
-int LED_YLLW2 = 19;
+int LED_YLLW1 = 32;
+int LED_YLLW2 = 33;
 int PINO_BOTAO = 15;
 int estadoBOTAO = 0;
 
 int MQ2 = 34;
 float sensorValue;
-int Threshold = 2000;
+int Threshold = 1000;
 
 bool alarmeTocado = false;
 
@@ -212,12 +212,16 @@ void loop() {
   struct tm timeinfo;
   getLocalTime(&timeinfo);
 
+  
+  lcd.print("                        ");
   lcd.setCursor(0, 0);
   lcd.print("Hora: ");
   char horaStr[9];
   strftime(horaStr, sizeof(horaStr), "%H:%M:%S", &timeinfo);
   lcd.print(horaStr);
 
+  
+  lcd.print("                          ");
   lcd.setCursor(0, 1);
   char dataStr[11];
   strftime(dataStr, sizeof(dataStr), "%d/%m/%Y", &timeinfo);
@@ -287,13 +291,14 @@ void loop() {
     lcd.print(sensorValue);
 
     lcd.setCursor(0, 1);
+    lcd.print("PERIGO!!");
     digitalWrite(LED_YLLW1, HIGH);
     digitalWrite(LED_YLLW2, HIGH);
     digitalWrite(PINO_BUZZER, HIGH);
-    lcd.print("PERIGO!!");
-    delay(500);
+    delay(300);
   }
- lcd.print("");
+  
+ 
 
   delay(1000);
 }
