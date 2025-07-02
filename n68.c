@@ -1,0 +1,257 @@
+#include <WiFi.h>
+#include <WebServer.h>
+#include <LiquidCrystal_I2C.h>
+#include <Wire.h>
+#include <time.h>
+#include <Preferences.h>
+
+const char* ssid     = "Educere ";
+const char* password = "Educere2023";
+
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+WebServer server(80);
+Preferences prefs;
+
+const int PINO_BUZZER = 27;
+const int LED_GREEN = 25;
+const int LED_BLUE = 26;
+
+int LED_YLLW1 = 32;
+int LED_YLLW2 = 33;
+int PINO_BOTAO = 15;
+int estadoBOTAO = 0;
+
+int MQ2 = 34;
+float sensorValue;
+int Threshold = 1000;
+
+bool alarmeTocado = false;
+
+struct Alarme {
+  int hora;
+  int minuto;
+  int segundo;
+  String mensagem;
+};
+
+Alarme alarmes[6];
+int totalAlarmes = 0;
+
+void salvarAlarmes() {
+  prefs.begin("alarmes", false);
+  prefs.putUInt("total", totalAlarmes);
+  for (int i = 0; i < totalAlarmes; i++) {
+    prefs.putInt(("h" + String(i)).c_str(), alarmes[i].hora);
+    prefs.putInt(("m" + String(i)).c_str(), alarmes[i].minuto);
+    prefs.putInt(("s" + String(i)).c_str(), alarmes[i].segundo);
+    prefs.putString(("msg" + String(i)).c_str(), alarmes[i].mensagem);
+  }
+  prefs.end();
+}
+
+void carregarAlarmes() {
+  prefs.begin("alarmes", true);
+  totalAlarmes = prefs.getUInt("total", 0);
+  for (int i = 0; i < totalAlarmes && i < 6; i++) {
+    alarmes[i].hora = prefs.getInt(("h" + String(i)).c_str(), 0);
+    alarmes[i].minuto = prefs.getInt(("m" + String(i)).c_str(), 0);
+    alarmes[i].segundo = prefs.getInt(("s" + String(i)).c_str(), 0);
+    alarmes[i].mensagem = prefs.getString(("msg" + String(i)).c_str(), "");
+  }
+  prefs.end();
+}
+
+void deletarAlarme(int index) {
+  if (index < 0 || index >= totalAlarmes) return;
+  for (int i = index; i < totalAlarmes - 1; i++) {
+    alarmes[i] = alarmes[i + 1];
+  }
+  totalAlarmes--;
+  salvarAlarmes();
+}
+
+String htmlPage() {
+  String page = R"rawliteral(
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <title>Painel ESP32</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: sans-serif; background: #1f1f1f; color: white; text-align: center; padding: 20px; }
+    .container { max-width: 400px; margin: auto; background: #2f2f2f; border-radius: 12px; padding: 20px; }
+    input, button { padding: 10px; margin: 10px 0; width: 100%; border-radius: 6px; border: none; font-size: 16px; }
+    input { background: #444; color: white; }
+    button { background: #4caf50; color: white; cursor: pointer; }
+    .alarm-item { background: #444; margin: 8px 0; padding: 8px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; }
+    .alarm-msg { flex: 1; text-align: left; }
+    .delete-btn { background: red; color: white; border: none; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Painel de Alarmes</h2>
+    <form action="/add" method="get">
+      <input type="time" name="horario" required>
+      <input type="text" name="mensagem" placeholder="Mensagem do Alarme" required>
+      <button type="submit">Salvar Alarme</button>
+    </form>
+    <div id="lista-alarmes">
+      <h3>Alarmes Registrados:</h3>
+)rawliteral";
+  for (int i = 0; i < totalAlarmes; i++) {
+    page += "<div class='alarm-item'><div class='alarm-msg'>" + String(alarmes[i].hora) + ":" + (alarmes[i].minuto < 10 ? "0" : "") + String(alarmes[i].minuto) + " - " + alarmes[i].mensagem + "</div>";
+    page += "<form action='/delete' method='get' style='margin:0'><input type='hidden' name='index' value='" + String(i) + "'><button class='delete-btn'>X</button></form></div>";
+  }
+  page += R"rawliteral(
+    </div>
+  </div>
+</body>
+</html>
+)rawliteral";
+  return page;
+}
+
+void handleRoot() {
+  server.send(200, "text/html", htmlPage());
+}
+
+void handleAdd() {
+  if (totalAlarmes < 6 && server.hasArg("horario") && server.hasArg("mensagem")) {
+    String horario = server.arg("horario");
+    int sep = horario.indexOf(':');
+    if (sep > 0) {
+      Alarme novo;
+      novo.hora = horario.substring(0, sep).toInt();
+      novo.minuto = horario.substring(sep + 1).toInt();
+      novo.segundo = 0;
+      novo.mensagem = server.arg("mensagem");
+      alarmes[totalAlarmes++] = novo;
+      salvarAlarmes();
+    }
+  }
+  server.sendHeader("Location", "/");
+  server.send(303);
+}
+
+void handleDelete() {
+  if (server.hasArg("index")) {
+    int idx = server.arg("index").toInt();
+    deletarAlarme(idx);
+  }
+  server.sendHeader("Location", "/");
+  server.send(303);
+}
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(PINO_BUZZER, OUTPUT);
+  pinMode(LED_GREEN, OUTPUT);
+  pinMode(LED_BLUE, OUTPUT);
+  pinMode(PINO_BOTAO, INPUT_PULLUP);
+  pinMode(LED_YLLW1, OUTPUT);
+  pinMode(LED_YLLW2, OUTPUT);
+  lcd.init();
+  lcd.backlight();
+  lcd.setCursor(0, 0);
+  lcd.print("Conectando...");
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) delay(500);
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("WiFi OK:");
+  lcd.setCursor(0, 1);
+  lcd.print(WiFi.localIP());
+  delay(3000);
+  lcd.clear();
+  configTime(-3 * 3600, 0, "pool.ntp.org", "time.nist.gov");
+  server.on("/", handleRoot);
+  server.on("/add", handleAdd);
+  server.on("/delete", handleDelete);
+  server.begin();
+  carregarAlarmes();
+}
+
+void loop() {
+  server.handleClient();
+
+  struct tm timeinfo;
+
+  getLocalTime(&timeinfo);
+
+  lcd.print("                        ");
+  lcd.setCursor(0, 0);
+  lcd.print("Hora: ");
+  char horaStr[9];
+  strftime(horaStr, sizeof(horaStr), "%H:%M:%S", &timeinfo);
+  lcd.print(horaStr);
+  
+  lcd.print("                        ");
+  lcd.setCursor(0, 1);
+  char dataStr[11];
+  strftime(dataStr, sizeof(dataStr), "%d/%m/%Y", &timeinfo);
+  lcd.print(dataStr);
+
+  for (int i = 0; i < totalAlarmes; i++) {
+    if (timeinfo.tm_hour == alarmes[i].hora &&
+        timeinfo.tm_min == alarmes[i].minuto &&
+        timeinfo.tm_sec == alarmes[i].segundo) {
+      if (!alarmeTocado) {
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print(alarmes[i].mensagem);
+        for (int j = 0; j < 5; j++) {
+          digitalWrite(PINO_BUZZER, HIGH);
+          digitalWrite(LED_GREEN, HIGH);
+          digitalWrite(LED_BLUE, HIGH);
+          delay(300);
+          digitalWrite(PINO_BUZZER, LOW);
+          digitalWrite(LED_GREEN, LOW);
+          digitalWrite(LED_BLUE, LOW);
+          delay(300);
+        }
+        alarmeTocado = true;
+        deletarAlarme(i);
+        lcd.clear();
+        break;
+      }
+    } else {
+      alarmeTocado = false;
+    }
+  }
+
+  estadoBOTAO = digitalRead(PINO_BOTAO);
+  if (estadoBOTAO == LOW) {
+    digitalWrite(LED_YLLW1, HIGH);
+    digitalWrite(LED_YLLW2, HIGH);
+    digitalWrite(PINO_BUZZER, HIGH);
+    delay(100);
+    digitalWrite(LED_YLLW1, LOW);
+    digitalWrite(LED_YLLW2, LOW);
+    digitalWrite(PINO_BUZZER, LOW);
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("VAZAMENTO!!!");
+    delay(100);
+  } else {
+    digitalWrite(LED_YLLW1, LOW);
+    digitalWrite(LED_YLLW2, LOW);
+    digitalWrite(PINO_BUZZER, LOW);
+  }
+
+  sensorValue = analogRead(MQ2);
+  if (sensorValue > Threshold) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Vazamento: ");
+    lcd.print(sensorValue);
+    lcd.setCursor(0, 1);
+    lcd.print("PERIGO!!");
+    digitalWrite(LED_YLLW1, HIGH);
+    digitalWrite(LED_YLLW2, HIGH);
+    digitalWrite(PINO_BUZZER, HIGH);
+    delay(300);
+  }
+  delay(1000);
+}
