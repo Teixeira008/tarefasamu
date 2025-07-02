@@ -146,6 +146,11 @@ void handleDelete() {
 
 void setup() {
   Serial.begin(115200);
+  analogReadResolution(12);     // 0–4095
+  lcd.print("Aquecendo MQ2...");
+  delay(500);                 // warm-up
+
+
   pinMode(PINO_BUZZER, OUTPUT);
   pinMode(LED_GREEN, OUTPUT);
   pinMode(LED_BLUE, OUTPUT);
@@ -240,7 +245,13 @@ void loop() {
     digitalWrite(PINO_BUZZER, LOW);
   }
 
-  sensorValue = analogRead(MQ2);
+  int media = 0;
+  for (int i = 0; i < 10; i++) {
+  media += analogRead(MQ2);
+  delay(10);
+  }
+  sensorValue = media / 10;
+
   if (sensorValue > Threshold) {
     lcd.clear();
     lcd.setCursor(0, 0);
