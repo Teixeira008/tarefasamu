@@ -4,6 +4,7 @@
 #include <Wire.h>
 #include <time.h>
 #include <Preferences.h>
+#include <Arduino.h>
 
 const char* ssid     = "Educere ";
 const char* password = "Educere2023";
@@ -12,14 +13,16 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 WebServer server(80);
 Preferences prefs;
 
-const int PINO_BUZZER = 27;
+const int buzzer = 27;
+const int BUZZER_DESPERTADOR_FREQ = 2000;  // Som do despertador
+const int BUZZER_ALARME_FREQ = 1000;       // Som do vazamento
+const int duracao = 500;
+
 const int LED_GREEN = 25;
 const int LED_BLUE = 26;
 
 int LED_YLLW1 = 32;
 int LED_YLLW2 = 33;
-int PINO_BOTAO = 15;
-int estadoBOTAO = 0;
 
 int MQ2 = 34;
 float sensorValue;
@@ -150,11 +153,9 @@ void setup() {
   lcd.print("Aquecendo MQ2...");
   delay(500);                 // warm-up
 
-
-  pinMode(PINO_BUZZER, OUTPUT);
+  pinMode(buzzer, OUTPUT);
   pinMode(LED_GREEN, OUTPUT);
   pinMode(LED_BLUE, OUTPUT);
-  pinMode(PINO_BOTAO, INPUT_PULLUP);
   pinMode(LED_YLLW1, OUTPUT);
   pinMode(LED_YLLW2, OUTPUT);
   lcd.init();
@@ -191,7 +192,7 @@ void loop() {
   char horaStr[9];
   strftime(horaStr, sizeof(horaStr), "%H:%M:%S", &timeinfo);
   lcd.print(horaStr);
-  
+
   lcd.print("                        ");
   lcd.setCursor(0, 1);
   char dataStr[11];
@@ -207,11 +208,11 @@ void loop() {
         lcd.setCursor(0, 0);
         lcd.print(alarmes[i].mensagem);
         for (int j = 0; j < 5; j++) {
-          digitalWrite(PINO_BUZZER, HIGH);
+          tone(buzzer, BUZZER_DESPERTADOR_FREQ);
           digitalWrite(LED_GREEN, HIGH);
           digitalWrite(LED_BLUE, HIGH);
           delay(300);
-          digitalWrite(PINO_BUZZER, LOW);
+          noTone(buzzer);
           digitalWrite(LED_GREEN, LOW);
           digitalWrite(LED_BLUE, LOW);
           delay(300);
@@ -226,29 +227,10 @@ void loop() {
     }
   }
 
-  estadoBOTAO = digitalRead(PINO_BOTAO);
-  if (estadoBOTAO == LOW) {
-    digitalWrite(LED_YLLW1, HIGH);
-    digitalWrite(LED_YLLW2, HIGH);
-    digitalWrite(PINO_BUZZER, HIGH);
-    delay(100);
-    digitalWrite(LED_YLLW1, LOW);
-    digitalWrite(LED_YLLW2, LOW);
-    digitalWrite(PINO_BUZZER, LOW);
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("VAZAMENTO!!!");
-    delay(100);
-  } else {
-    digitalWrite(LED_YLLW1, LOW);
-    digitalWrite(LED_YLLW2, LOW);
-    digitalWrite(PINO_BUZZER, LOW);
-  }
-
   int media = 0;
   for (int i = 0; i < 10; i++) {
-  media += analogRead(MQ2);
-  delay(10);
+    media += analogRead(MQ2);
+    delay(10);
   }
   sensorValue = media / 10;
 
@@ -261,8 +243,10 @@ void loop() {
     lcd.print("PERIGO!!");
     digitalWrite(LED_YLLW1, HIGH);
     digitalWrite(LED_YLLW2, HIGH);
-    digitalWrite(PINO_BUZZER, HIGH);
-    delay(300);
+    tone(buzzer, BUZZER_ALARME_FREQ);
+    delay(200);
+    noTone(buzzer);
   }
+
   delay(1000);
 }
